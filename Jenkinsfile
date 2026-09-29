@@ -1,4 +1,5 @@
 pipeline {
+
     agent any
 
     environment {
@@ -10,6 +11,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 echo 'Checking out Contact Management application'
+
                 checkout scm
             }
         }
@@ -17,6 +19,10 @@ pipeline {
         stage('Verify Tools') {
             steps {
                 sh '''
+                    echo "======================================"
+                    echo "VERIFYING TOOLS"
+                    echo "======================================"
+
                     echo "Docker:"
                     docker --version
 
@@ -35,11 +41,11 @@ pipeline {
         stage('Install Frontend Dependencies') {
             steps {
                 sh '''
-                    echo "Installing frontend dependencies..."
+                    echo "======================================"
+                    echo "INSTALLING FRONTEND DEPENDENCIES"
+                    echo "======================================"
 
                     npm install
-
-                    echo "Installing React TypeScript definitions..."
 
                     npm install --save-dev @types/react @types/react-dom
                 '''
@@ -49,7 +55,9 @@ pipeline {
         stage('Frontend Build Test') {
             steps {
                 sh '''
-                    echo "Building React frontend..."
+                    echo "======================================"
+                    echo "BUILDING FRONTEND"
+                    echo "======================================"
 
                     npm run build
                 '''
@@ -59,6 +67,10 @@ pipeline {
         stage('Create Docker Files') {
             steps {
                 sh '''
+                    echo "======================================"
+                    echo "CREATING DOCKER FILES"
+                    echo "======================================"
+
                     echo "Creating frontend Dockerfile..."
 
                     cat > Dockerfile <<'EOF'
@@ -112,6 +124,7 @@ EOF
 
                     cat > nginx.conf <<'EOF'
 server {
+
     listen 80;
 
     server_name _;
@@ -120,83 +133,147 @@ server {
 
     index index.html;
 
+
     location / {
+
         try_files $uri $uri/ /index.html;
+
     }
 
+
     location /api/ {
+
         proxy_pass http://backend:8000;
+
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;
+
         proxy_set_header X-Real-IP $remote_addr;
+
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
         proxy_set_header X-Forwarded-Proto $scheme;
+
     }
+
 }
 EOF
 
 
-                    echo "Creating Docker Compose file..."
+                    echo "Creating Docker Compose..."
 
                     cat > docker-compose.yml <<'EOF'
 services:
 
   db:
+
     image: postgres:16-alpine
+
     container_name: contact-management-db
+
     environment:
+
       POSTGRES_USER: contactuser
+
       POSTGRES_PASSWORD: contactpassword
+
       POSTGRES_DB: contactdb
+
     volumes:
+
       - postgres_data:/var/lib/postgresql/data
+
     networks:
+
       - contact-network
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U contactuser -d contactdb"]
+
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U contactuser -d contactdb"
+        ]
+
       interval: 10s
+
       timeout: 5s
+
       retries: 5
 
+
   backend:
+
     build:
+
       context: ./backend
+
       dockerfile: Dockerfile
+
     container_name: contact-management-backend
+
     environment:
+
       DATABASE_URL: postgresql://contactuser:contactpassword@db:5432/contactdb
+
     depends_on:
+
       db:
+
         condition: service_healthy
+
     networks:
+
       - contact-network
+
     ports:
+
       - "8000:8000"
 
+
   frontend:
+
     build:
+
       context: .
+
       dockerfile: Dockerfile
+
     container_name: contact-management-frontend
+
     depends_on:
+
       - backend
+
     ports:
+
       - "8081:80"
+
     networks:
+
       - contact-network
 
+
 networks:
+
   contact-network:
+
     driver: bridge
 
+
 volumes:
+
   postgres_data:
 EOF
 
-                    echo "Docker files created successfully."
+
+                    echo "======================================"
+                    echo "DOCKER FILES CREATED"
+                    echo "======================================"
 
                     ls -la
+
                 '''
             }
         }
@@ -204,11 +281,15 @@ EOF
         stage('Validate Docker Compose') {
             steps {
                 sh '''
-                    echo "Validating Docker Compose..."
+                    echo "======================================"
+                    echo "VALIDATING DOCKER COMPOSE"
+                    echo "======================================"
 
                     test -f docker-compose.yml
 
                     docker compose -f docker-compose.yml config
+
+                    echo "Docker Compose configuration is valid."
                 '''
             }
         }
@@ -216,7 +297,9 @@ EOF
         stage('Build Docker Images') {
             steps {
                 sh '''
-                    echo "Building Docker images..."
+                    echo "======================================"
+                    echo "BUILDING DOCKER IMAGES"
+                    echo "======================================"
 
                     docker compose -f docker-compose.yml build --no-cache
                 '''
@@ -226,13 +309,15 @@ EOF
         stage('Deploy Application') {
             steps {
                 sh '''
-                    echo "Stopping previous containers..."
+                    echo "======================================"
+                    echo "DEPLOYING APPLICATION"
+                    echo "======================================"
 
                     docker compose -f docker-compose.yml down || true
 
-                    echo "Starting application..."
-
                     docker compose -f docker-compose.yml up -d
+
+                    echo "Application containers started."
                 '''
             }
         }
@@ -240,7 +325,11 @@ EOF
         stage('Verify Containers') {
             steps {
                 sh '''
-                    echo "Checking containers..."
+                    echo "======================================"
+                    echo "VERIFYING CONTAINERS"
+                    echo "======================================"
+
+                    sleep 10
 
                     docker compose -f docker-compose.yml ps
                 '''
@@ -250,13 +339,33 @@ EOF
         stage('Backend Health Check') {
             steps {
                 sh '''
-                    echo "Checking backend..."
+                    echo "======================================"
+                    echo "BACKEND HEALTH CHECK"
+                    echo "======================================"
 
-                    sleep 10
+                    sleep 5
 
                     docker compose -f docker-compose.yml logs --tail=50 backend
 
-                    curl -f http://localhost:8000/docs || exit 1
+                    curl -f http://localhost:8000/docs
+
+                    echo ""
+                    echo "Backend is responding successfully."
+                '''
+            }
+        }
+
+        stage('Frontend Health Check') {
+            steps {
+                sh '''
+                    echo "======================================"
+                    echo "FRONTEND HEALTH CHECK"
+                    echo "======================================"
+
+                    curl -f http://localhost:8081
+
+                    echo ""
+                    echo "Frontend is responding successfully."
                 '''
             }
         }
@@ -264,11 +373,19 @@ EOF
         stage('Application Test') {
             steps {
                 sh '''
+                    echo "======================================"
+                    echo "APPLICATION TEST"
+                    echo "======================================"
+
                     echo "Testing frontend..."
 
-                    curl -f http://localhost:8081 || exit 1
+                    curl -I http://localhost:8081
 
-                    echo "Application is running successfully."
+                    echo "Testing backend..."
+
+                    curl -I http://localhost:8000/docs
+
+                    echo "Application tests completed."
                 '''
             }
         }
@@ -277,26 +394,46 @@ EOF
     post {
 
         success {
-            echo '=========================================='
-            echo 'CONTACT MANAGEMENT DEPLOYMENT SUCCESSFUL'
-            echo '=========================================='
-            echo 'Frontend: http://EC2-PUBLIC-IP:8081'
-            echo 'Backend:  http://EC2-PUBLIC-IP:8000/docs'
+
+            echo '''
+==========================================
+CONTACT MANAGEMENT DEPLOYMENT SUCCESSFUL
+==========================================
+
+Frontend:
+http://EC2-PUBLIC-IP:8081
+
+Backend:
+http://EC2-PUBLIC-IP:8000/docs
+
+==========================================
+'''
+
         }
 
         failure {
-            echo '=========================================='
-            echo 'CONTACT MANAGEMENT DEPLOYMENT FAILED'
-            echo '=========================================='
+
+            echo '''
+==========================================
+CONTACT MANAGEMENT DEPLOYMENT FAILED
+==========================================
+'''
 
             sh '''
+                echo "Container status:"
                 docker compose -f docker-compose.yml ps || true
+
+                echo "Container logs:"
                 docker compose -f docker-compose.yml logs --tail=100 || true
             '''
         }
 
         always {
-            echo 'Pipeline completed.'
+
+            echo '=========================================='
+            echo 'PIPELINE COMPLETED'
+            echo '=========================================='
+
         }
     }
 }
